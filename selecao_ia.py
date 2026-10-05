@@ -24,7 +24,7 @@ import pyperclip
 from pynput import keyboard, mouse
 
 # ---------------- configuração ----------------
-MODELO = "claude-haiku-4-5-20251001"  # rápido e barato; troque se quiser
+MODELO = "claude-sonnet-5-5"
 MAX_TOKENS = 120
 JANELA_CLIQUE = 0.40      # segundos entre cliques para contar como multi-clique
 DIST_MAX = 6              # px que o mouse pode se mover entre cliques
@@ -172,7 +172,7 @@ def trabalhar(req_id, n, x, y):
         else:
             # Sem chave de API: usa o Claude Code CLI já logado (`claude -p`)
             r = subprocess.run(
-                [CLAUDE_BIN, "-p", "--model", "haiku",
+                [CLAUDE_BIN, "-p", "--model", MODELO,
                  "--append-system-prompt", SISTEMA, pedido],
                 capture_output=True, text=True, timeout=90,
                 stdin=subprocess.DEVNULL,
