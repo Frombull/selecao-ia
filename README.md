@@ -25,4 +25,4 @@ Use o Python do Homebrew: o do sistema tem Tk 8.5, que é instável.
 ./rodar.sh
 ```
 
-Esc ou clique fecha a janela. Cmd+Option+P pausa/retoma. Ajustes (tamanho, opacidade, modelo) no topo de `selecao_ia.py`.
+Para textos maiores (ex.: questão de múltipla escolha), selecione arrastando o mouse e aperte **Cmd+Option+Enter**. Esc ou clique fecha a janela. Cmd+Option+P pausa/retoma. Ajustes (tamanho, opacidade, modelo) no topo de `selecao_ia.py`.

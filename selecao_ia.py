@@ -4,6 +4,7 @@ selecao_ia.py - clique duplo/triplo em um texto e a IA responde numa janelinha a
   Clique duplo  -> seleciona uma PALAVRA  -> explica o significado em 1-2 frases
   Clique triplo -> seleciona a LINHA/PARÁGRAFO -> responde a pergunta / explica o trecho
 
+  Cmd+Option+Enter (Mac) / Ctrl+Alt+Enter   envia a seleção atual (ex.: arrastada com o mouse)
   Cmd+Option+P (Mac) / Ctrl+Alt+P (Windows)  pausa/retoma
   Esc ou clicar na janela  fecha a resposta
 
@@ -53,6 +54,13 @@ MAC = sys.platform == "darwin"
 TECLA_COPIAR = keyboard.Key.cmd if MAC else keyboard.Key.ctrl
 FONTE = ("Helvetica Neue", 11) if MAC else ("Segoe UI", 10)
 ATALHO_PAUSA = "<cmd>+<alt>+p" if MAC else "<ctrl>+<alt>+p"
+ATALHO_SELECAO = "<cmd>+<alt>+<enter>" if MAC else "<ctrl>+<alt>+<enter>"
+# Modificadores que atrapalhariam o Cmd/Ctrl+C simulado se ainda estivessem apertados
+MODS_ATRAPALHAM = {
+    keyboard.Key.alt, keyboard.Key.alt_r,
+    keyboard.Key.shift, keyboard.Key.shift_r,
+    keyboard.Key.ctrl, keyboard.Key.ctrl_r,
+}
 
 # Com ANTHROPIC_API_KEY usa a API (com streaming); sem ela, usa o `claude` CLI.
 client = None
@@ -68,6 +76,8 @@ if client is None and not os.path.exists(CLAUDE_BIN):
 teclado = keyboard.Controller()
 eventos: "queue.Queue[tuple]" = queue.Queue()
 pausado = threading.Event()
+mods_apertados: set = set()
+mouse_ctl = mouse.Controller()
 
 
 # ---------------- detecção de cliques ----------------
@@ -330,14 +340,33 @@ def main():
             eventos.put(("fechar",))
             print("⏸ pausado")
 
+    def enviar_selecao_atual():
+        """Atalho: envia a seleção que já existe (ex.: feita arrastando o mouse)."""
+        if pausado.is_set():
+            return
+        limite = time.monotonic() + 2.0
+        while mods_apertados and time.monotonic() < limite:
+            time.sleep(0.02)  # espera soltar Option/Shift antes de simular Cmd+C
+        time.sleep(0.05)
+        x, y = mouse_ctl.position
+        eventos.put(("capturar", 3, int(x), int(y)))
+
     detector = DetectorCliques()
     mouse.Listener(on_click=detector.on_click, daemon=True).start()
+    keyboard.Listener(
+        on_press=lambda k: mods_apertados.add(k) if k in MODS_ATRAPALHAM else None,
+        on_release=lambda k: mods_apertados.discard(k),
+        daemon=True,
+    ).start()
     keyboard.GlobalHotKeys({
         ATALHO_PAUSA: alternar_pausa,
+        ATALHO_SELECAO: lambda: threading.Thread(target=enviar_selecao_atual, daemon=True).start(),
         "<esc>": lambda: eventos.put(("fechar",)),
     }).start()
 
-    print("selecao_ia rodando. Clique duplo = palavra, triplo = parágrafo. Cmd+Option+P (Mac) ou Ctrl+Alt+P pausa.")
+    print("selecao_ia rodando. Clique duplo = palavra, triplo = parágrafo, "
+          "Cmd+Option+Enter (Mac) ou Ctrl+Alt+Enter = envia a seleção atual (arrastada). "
+          "Cmd+Option+P (Mac) ou Ctrl+Alt+P pausa.")
     root.after(25, processar)
     root.mainloop()
 
