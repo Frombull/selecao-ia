@@ -4,7 +4,7 @@ selecao_ia.py - clique duplo/triplo em um texto e a IA responde numa janelinha a
   Clique duplo  -> seleciona uma PALAVRA  -> explica o significado em 1-2 frases
   Clique triplo -> seleciona a LINHA/PARÁGRAFO -> responde a pergunta / explica o trecho
 
-  Cmd+Option+Enter (Mac) / Ctrl+Alt+Enter   envia a seleção atual (ex.: arrastada com o mouse)
+  Cmd+Option+A (Mac) / Ctrl+Alt+A           envia a seleção atual (ex.: arrastada com o mouse)
   Cmd+Option+P (Mac) / Ctrl+Alt+P (Windows)  pausa/retoma
   Esc ou clicar na janela  fecha a resposta
 
@@ -32,13 +32,9 @@ DIST_MAX = 6              # px que o mouse pode se mover entre cliques
 ESPERA_TRIPLO = 0.35      # após o 2º clique, espera isso para ver se vem o 3º
 MAX_CHARS = 4000          # ignora seleções gigantes
 LARGURA = 180             # largura da janelinha (px)
-OPACIDADE = 0.5           # transparência da janelinha (0.0 a 1.0)
+OPACIDADE = 0.40          # transparência da janelinha (0.0 a 1.0)
 
-SISTEMA = (
-    "Você é um assistente de resposta instantânea que aparece numa janela minúscula "
-    "ao lado do cursor. Responda em português do Brasil, direto ao ponto, sem "
-    "introduções nem markdown. Máximo de ~30 palavras, no máximo 2 frases curtas."
-)
+SISTEMA = "Você responde numa janela minúscula ao lado do cursor, então cada palavra custa espaço. Responda em português do Brasil, sem markdown, sem introdução e sem repetir nem reescrever a pergunta ou o trecho recebido. Se for questão de múltipla escolha, responda SÓ com a letra da alternativa correta (ex.: \"d\"), sem explicação, a menos que peçam justificativa. Nos demais casos, vá direto à resposta em no máximo 2 frases curtas (~30 palavras)."
 
 # ---------------- DPI (coordenadas do mouse e do Tk iguais) ----------------
 if sys.platform == "win32":
@@ -53,14 +49,11 @@ if sys.platform == "win32":
 MAC = sys.platform == "darwin"
 TECLA_COPIAR = keyboard.Key.cmd if MAC else keyboard.Key.ctrl
 FONTE = ("Helvetica Neue", 11) if MAC else ("Segoe UI", 10)
-ATALHO_PAUSA = "<cmd>+<alt>+p" if MAC else "<ctrl>+<alt>+p"
-ATALHO_SELECAO = "<cmd>+<alt>+<enter>" if MAC else "<ctrl>+<alt>+<enter>"
-# Modificadores que atrapalhariam o Cmd/Ctrl+C simulado se ainda estivessem apertados
-MODS_ATRAPALHAM = {
-    keyboard.Key.alt, keyboard.Key.alt_r,
-    keyboard.Key.shift, keyboard.Key.shift_r,
-    keyboard.Key.ctrl, keyboard.Key.ctrl_r,
-}
+# Atalhos = modificador de cópia + Option/Alt + tecla. A tecla é casada pelo código físico (vk):
+# com o Option apertado o macOS entrega "å"/"π" no lugar de "a"/"p", e o atalho por letra não casa.
+MOD_COPIAR = "cmd" if MAC else "ctrl"
+VK_SELECAO = 0 if MAC else 0x41   # tecla A: envia a seleção atual
+VK_PAUSA = 35 if MAC else 0x50    # tecla P: pausa/retoma
 
 # Com ANTHROPIC_API_KEY usa a API (com streaming); sem ela, usa o `claude` CLI.
 client = None
@@ -345,27 +338,39 @@ def main():
         if pausado.is_set():
             return
         limite = time.monotonic() + 2.0
-        while mods_apertados and time.monotonic() < limite:
+        while (mods_apertados - {MOD_COPIAR}) and time.monotonic() < limite:
             time.sleep(0.02)  # espera soltar Option/Shift antes de simular Cmd+C
         time.sleep(0.05)
         x, y = mouse_ctl.position
         eventos.put(("capturar", 3, int(x), int(y)))
 
+    def nome_modificador(tecla):
+        base = getattr(tecla, "name", "").split("_")[0]  # alt_r -> alt, shift_l -> shift
+        return base if base in ("cmd", "alt", "shift", "ctrl") else None
+
+    def ao_apertar(tecla):
+        mod = nome_modificador(tecla)
+        if mod:
+            mods_apertados.add(mod)
+        elif MOD_COPIAR in mods_apertados and "alt" in mods_apertados:
+            vk = getattr(tecla, "vk", None)
+            if vk == VK_SELECAO:
+                threading.Thread(target=enviar_selecao_atual, daemon=True).start()
+            elif vk == VK_PAUSA:
+                alternar_pausa()
+
+    def ao_soltar(tecla):
+        mod = nome_modificador(tecla)
+        if mod:
+            mods_apertados.discard(mod)
+
     detector = DetectorCliques()
     mouse.Listener(on_click=detector.on_click, daemon=True).start()
-    keyboard.Listener(
-        on_press=lambda k: mods_apertados.add(k) if k in MODS_ATRAPALHAM else None,
-        on_release=lambda k: mods_apertados.discard(k),
-        daemon=True,
-    ).start()
-    keyboard.GlobalHotKeys({
-        ATALHO_PAUSA: alternar_pausa,
-        ATALHO_SELECAO: lambda: threading.Thread(target=enviar_selecao_atual, daemon=True).start(),
-        "<esc>": lambda: eventos.put(("fechar",)),
-    }).start()
+    keyboard.Listener(on_press=ao_apertar, on_release=ao_soltar, daemon=True).start()
+    keyboard.GlobalHotKeys({"<esc>": lambda: eventos.put(("fechar",))}).start()
 
     print("selecao_ia rodando. Clique duplo = palavra, triplo = parágrafo, "
-          "Cmd+Option+Enter (Mac) ou Ctrl+Alt+Enter = envia a seleção atual (arrastada). "
+          "Cmd+Option+A (Mac) ou Ctrl+Alt+A = envia a seleção atual (arrastada). "
           "Cmd+Option+P (Mac) ou Ctrl+Alt+P pausa.")
     root.after(25, processar)
     root.mainloop()
